@@ -309,9 +309,9 @@ async def chat_completions(request: Request):
     try:
         from modules.payload_converter import convert_openai_to_lmarena_payload, stream_generator, non_stream_response
         lmarena_payload = convert_openai_to_lmarena_payload(
-            openai_req, session_id, message_id, DEFAULT_MODEL_ID,
+            openai_req, session_id, message_id, DEFAULT_MODEL_ID, CONFIG,
             mode_override=mode_override, battle_target_override=battle_target_override
-)
+        )
         
         message_to_browser = {"request_id": request_id, "payload": lmarena_payload}
         await browser_ws.send_text(json.dumps(message_to_browser))
