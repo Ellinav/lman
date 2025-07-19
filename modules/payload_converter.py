@@ -19,17 +19,17 @@ def convert_openai_to_lmarena_payload(
     openai_req: dict, 
     session_id: str, 
     message_id: str, 
-    default_model_id: str,
+    target_model_id: str,
     app_config: dict, # 新增参数，用于接收主程序的配置
     mode_override: str = None, 
     battle_target_override: str = None
 ) -> dict:
-    """
-    将OpenAI格式的请求转换为LMArena油猴脚本可以理解的负载。
-    新增了酒馆模式和Bypass模式。
-    """
-    target_model_id = default_model_id
-    
+    lmarena_payload = {
+        "message_templates": message_templates,
+        "target_model_id": target_model_id, # <-- 确保这里使用的是新参数名
+        "session_id": session_id,
+        "message_id": message_id
+    }
     # 1. 提取原始消息
     processed_messages = openai_req.get("messages", [])
 
