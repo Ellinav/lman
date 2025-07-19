@@ -12,6 +12,7 @@ def initialize_converter(channels):
     """从主程序接收response_channels的引用"""
     global response_channels
     response_channels = channels
+    logger = app_logger
 
 def convert_openai_to_lmarena_payload(
     openai_req: dict, 
