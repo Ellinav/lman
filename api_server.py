@@ -130,7 +130,7 @@ async def send_pings():
 async def lifespan(app: FastAPI):
     global main_event_loop, last_activity_time, idle_monitor_thread
     main_event_loop = asyncio.get_running_loop()
-    payload_converter.initialize_converter(response_channels)
+    payload_converter.initialize_converter(response_channels, logger)
     load_config()
     load_model_endpoint_map()
     logger.info("服务器启动完成。等待油猴脚本连接...")
