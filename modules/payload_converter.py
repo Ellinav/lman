@@ -19,24 +19,26 @@ def convert_openai_to_lmarena_payload(
     openai_req: dict, 
     session_id: str, 
     message_id: str, 
-    target_model_id: str,
-    app_config: dict, # 新增参数，用于接收主程序的配置
+    default_model_id: str,
+    app_config: dict,
     mode_override: str = None, 
     battle_target_override: str = None
 ) -> dict:
-    lmarena_payload = {
-        "message_templates": message_templates,
-        "target_model_id": target_model_id, # <-- 确保这里使用的是新参数名
-        "session_id": session_id,
-        "message_id": message_id
-    }
-    # 1. 提取原始消息
+    """
+    将OpenAI格式的请求转换为LMArena油猴脚本可以理解的负载。
+    新增了酒馆模式和Bypass模式。
+    """
+    # 【【【核心修正】】】
+    # 将 message_templates 的初始化移到函数的最开始，
+    # 确保无论后续逻辑如何，这个变量都一定存在。
+    message_templates = []
+
+    target_model_id = default_model_id
+    
     processed_messages = openai_req.get("messages", [])
 
-    # --- 【新增】酒馆模式 (Tavern Mode) 逻辑 ---
-    # 检查环境变量或配置文件来决定是否启用
+    # --- 酒馆模式 (Tavern Mode) 逻辑 ---
     is_tavern_mode_enabled = os.environ.get("TAVERN_MODE_ENABLED", str(app_config.get("tavern_mode_enabled", False))).lower() == 'true'
-
     if is_tavern_mode_enabled:
         logger.info("酒馆模式已启用，正在合并system消息...")
         system_prompts = [msg['content'] for msg in processed_messages if msg['role'] == 'system']
@@ -51,8 +53,8 @@ def convert_openai_to_lmarena_payload(
         final_messages.extend(other_messages)
         processed_messages = final_messages
 
-    # 2. 构建LMArena格式的消息模板
-    message_templates = []
+    # --- 构建LMArena格式的消息模板 ---
+    # (注意：我们已经不需要在这里初始化 message_templates = [] 了)
     for msg in processed_messages:
         new_msg = {
             "role": msg.get("role"),
@@ -67,15 +69,13 @@ def convert_openai_to_lmarena_payload(
             
         message_templates.append(new_msg)
 
-    # --- 【新增】Bypass 模式逻辑 ---
+    # --- Bypass 模式逻辑 ---
     is_bypass_enabled = os.environ.get("BYPASS_ENABLED", str(app_config.get("bypass_enabled", False))).lower() == 'true'
-
     if is_bypass_enabled:
         logger.info("Bypass模式已启用，正在追加一条空user消息...")
         message_templates.append({"role": "user", "content": " ", "participantPosition": "a"})
 
-
-    # 3. 构建最终负载
+    # --- 构建最终负载 ---
     lmarena_payload = {
         "message_templates": message_templates,
         "target_model_id": target_model_id,
