@@ -36,6 +36,7 @@ class EndpointUpdatePayload(BaseModel):
     message_id: str = Field(..., alias='messageId')
     mode: str
     battle_target: Optional[str] = Field(None, alias='battleTarget')
+    model_id: Optional[str] = Field(None, alias='modelId')
 
 def load_model_endpoint_map():
     global MODEL_ENDPOINT_MAP
@@ -285,6 +286,8 @@ async def chat_completions(request: Request):
     model_name = openai_req.get("model")
     session_id, message_id, mode_override, battle_target_override = None, None, None, None
 
+    specific_model_id = None
+
     if model_name and model_name in MODEL_ENDPOINT_MAP:
         mapping_entry = MODEL_ENDPOINT_MAP[model_name]
         selected_mapping = random.choice(mapping_entry) if isinstance(mapping_entry, list) and mapping_entry else mapping_entry if isinstance(mapping_entry, dict) else None
@@ -294,14 +297,13 @@ async def chat_completions(request: Request):
             message_id = selected_mapping.get("message_id") or selected_mapping.get("messageId")
             mode_override = selected_mapping.get("mode")
             battle_target_override = selected_mapping.get("battle_target")
-
-    if not session_id and CONFIG.get("use_default_ids_if_mapping_not_found", True):
-        session_id = CONFIG.get("session_id")
-        message_id = CONFIG.get("message_id")
-        mode_override, battle_target_override = None, None
+            # 【【【在这里获取保存的精确模型ID】】】
+            specific_model_id = selected_mapping.get("model_id") or selected_mapping.get("modelId")
 
     if not session_id or not message_id or "YOUR_" in session_id or "YOUR_" in message_id:
         raise HTTPException(status_code=400, detail="会话ID或消息ID无效。")
+
+    final_model_id = specific_model_id or DEFAULT_MODEL_ID
 
     request_id = str(uuid.uuid4())
     response_channels[request_id] = asyncio.Queue()
@@ -309,7 +311,7 @@ async def chat_completions(request: Request):
     try:
         from modules.payload_converter import convert_openai_to_lmarena_payload, stream_generator, non_stream_response
         lmarena_payload = convert_openai_to_lmarena_payload(
-            openai_req, session_id, message_id, DEFAULT_MODEL_ID, CONFIG,
+            openai_req, session_id, message_id, final_model_id, CONFIG,
             mode_override=mode_override, battle_target_override=battle_target_override
         )
         
