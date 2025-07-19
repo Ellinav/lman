@@ -8,7 +8,7 @@ import os
 # 全局变量，用于从主程序api_server.py接收response_channels字典
 response_channels = None
 
-def initialize_converter(channels):
+def initialize_converter(channels, app_logger):
     """从主程序接收response_channels的引用"""
     global response_channels
     response_channels = channels
