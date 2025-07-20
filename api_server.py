@@ -486,6 +486,15 @@ async def get_admin_login_page():
     </body></html>
     """)
 
+@app.post("/v1/v1/images/generations")
+async def images_generations_alias(request: Request):
+    """
+    这是一个别名/陷阱，用于捕获SillyTavern在基础URL已包含/v1时
+    生成的错误的文生图路径。它会将请求无缝转交给正确的处理函数。
+    """
+    logger.info("捕获到来自SillyTavern的错误路径 '/v1/v1/images/generations' 请求，已自动转交。")
+    return await images_generations(request)
+
 @app.get("/admin", response_class=HTMLResponse)
 async def get_admin_page():
     # 最终版：基于能正常工作的极简版，安全地添加了导入、导出和删除功能
