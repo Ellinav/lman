@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
     if CONFIG.get("enable_idle_restart", False):
         idle_monitor_thread = threading.Thread(target=idle_monitor, daemon=True)
         idle_monitor_thread.start()
-        image_generation.initialize_image_module(logger, response_channels, CONFIG, {}, DEFAULT_MODEL_ID)
+        image_generation.initialize_image_module(logger, response_channels, CONFIG, {}, DEFAULT_MODEL_ID, MODEL_ENDPOINT_MAP)
     yield
     logger.info("服务器正在关闭。")
 
@@ -331,6 +331,16 @@ async def chat_completions(request: Request):
 async def images_generations(request: Request):
     global last_activity_time
     last_activity_time = datetime.now()
+
+    load_config() # 确保加载了最新的配置
+    api_key = os.environ.get("API_KEY") or CONFIG.get("api_key")
+    if api_key:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            raise HTTPException(status_code=401, detail="未提供 API Key。")
+        if auth_header.split(' ')[1] != api_key:
+            raise HTTPException(status_code=401, detail="提供的 API Key 不正确。")
+
     response_data, status_code = await image_generation.handle_image_generation_request(request, browser_ws)
     return JSONResponse(content=response_data, status_code=status_code)
 
