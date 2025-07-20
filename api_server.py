@@ -138,15 +138,11 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(send_pings())
     last_activity_time = datetime.now()
 
-    # 【核心修正】将初始化移出if判断，并传入正确的MAP
-    # 确保文生图模块总是被初始化，并且能拿到“个人通讯录”
     image_generation.initialize_image_module(
         app_logger=logger, 
         channels=response_channels, 
         app_config=CONFIG, 
-        model_map={}, # model_map在新架构下已无用，传空字典
-        default_model_id=DEFAULT_MODEL_ID,
-        model_endpoint_map=MODEL_ENDPOINT_MAP # <-- 将个人通讯录传进去
+        default_model_id=DEFAULT_MODEL_ID
     )
     
     if CONFIG.get("enable_idle_restart", False):
@@ -346,7 +342,7 @@ async def images_generations(request: Request):
     global last_activity_time
     last_activity_time = datetime.now()
 
-    load_config() # 确保加载了最新的配置
+    load_config()
     api_key = os.environ.get("API_KEY") or CONFIG.get("api_key")
     if api_key:
         auth_header = request.headers.get('Authorization')
@@ -354,8 +350,8 @@ async def images_generations(request: Request):
             raise HTTPException(status_code=401, detail="未提供 API Key。")
         if auth_header.split(' ')[1] != api_key:
             raise HTTPException(status_code=401, detail="提供的 API Key 不正确。")
+    response_data, status_code = await image_generation.handle_image_generation_request(request, browser_ws, MODEL_ENDPOINT_MAP)
 
-    response_data, status_code = await image_generation.handle_image_generation_request(request, browser_ws)
     return JSONResponse(content=response_data, status_code=status_code)
 
 @app.post("/internal/start_id_capture")
