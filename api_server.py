@@ -142,7 +142,9 @@ async def lifespan(app: FastAPI):
         app_logger=logger, 
         channels=response_channels, 
         app_config=CONFIG, 
-        default_model_id=DEFAULT_MODEL_ID
+        model_map={},
+        default_model_id=DEFAULT_MODEL_ID,
+        model_endpoint_map=MODEL_ENDPOINT_MAP
     )
     
     if CONFIG.get("enable_idle_restart", False):
