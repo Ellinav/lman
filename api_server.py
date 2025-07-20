@@ -141,7 +141,7 @@ async def lifespan(app: FastAPI):
     # 【核心修正】将初始化移出if判断，并传入正确的MAP
     # 确保文生图模块总是被初始化，并且能拿到“个人通讯录”
     image_generation.initialize_image_module(
-        logger=logger, 
+        app_logger=logger, 
         channels=response_channels, 
         app_config=CONFIG, 
         model_map={}, # model_map在新架构下已无用，传空字典
