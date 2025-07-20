@@ -244,6 +244,7 @@ async def websocket_endpoint(websocket: WebSocket):
         response_channels.clear()
         logger.info("WebSocket 连接已清理。")
 
+@app.get("/models")
 @app.get("/v1/models")
 async def get_models():
     if not MODEL_ENDPOINT_MAP:
@@ -301,7 +302,7 @@ async def chat_completions(request: Request):
             specific_model_id = selected_mapping.get("model_id") or selected_mapping.get("modelId")
 
     logger.info(f"正在为模型 '{model_name}' 使用 Session ID: {session_id}")
-    
+
     if not session_id or not message_id or "YOUR_" in session_id or "YOUR_" in message_id:
         raise HTTPException(status_code=400, detail="会话ID或消息ID无效。")
 
