@@ -5,27 +5,31 @@ import json
 import re
 import time
 import uuid
+import random
 from typing import AsyncGenerator
 
 # 全局变量，之后会从主服务传入
 logger = None
 response_channels = None
 CONFIG = None
-MODEL_NAME_TO_ID_MAP = None
+MODEL_NAME_TO_ID_MAP = None # 虽然文生图不常用，但保留以备将来使用
 DEFAULT_MODEL_ID = None
+MODEL_ENDPOINT_MAP = None # 【【【新增】】】 接收“个人通讯录”
 
 
-def initialize_image_module(app_logger, channels, app_config, model_map, default_model_id):
+def initialize_image_module(app_logger, channels, app_config, model_map, default_model_id, model_endpoint_map):
     """初始化模块所需的全局变量。"""
-    global logger, response_channels, CONFIG, MODEL_NAME_TO_ID_MAP, DEFAULT_MODEL_ID
+    global logger, response_channels, CONFIG, MODEL_NAME_TO_ID_MAP, DEFAULT_MODEL_ID, MODEL_ENDPOINT_MAP
     logger = app_logger
     response_channels = channels
     CONFIG = app_config
     MODEL_NAME_TO_ID_MAP = model_map
     DEFAULT_MODEL_ID = default_model_id
-    logger.info("文生图模块已成功初始化。")
+    MODEL_ENDPOINT_MAP = model_endpoint_map # 【【【新增】】】 保存“个人通讯录”的引用
+    logger.info("文生图模块已成功初始化 (v2)。")
 
 def convert_to_lmarena_image_payload(prompt: str, model_id: str, session_id: str, message_id: str) -> dict:
+    # ... 此函数无需修改 ...
     """将文本提示转换为 LMArena 图片生成的载荷。"""
     return {
         "is_image_request": True,
@@ -41,6 +45,7 @@ def convert_to_lmarena_image_payload(prompt: str, model_id: str, session_id: str
     }
 
 async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, str], None]:
+    # ... 此函数无需修改 ...
     """处理来自浏览器的图片生成数据流，并产生结构化事件。"""
     queue = response_channels.get(request_id)
     if not queue:
@@ -50,21 +55,17 @@ async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, st
 
     buffer = ""
     timeout = CONFIG.get("stream_response_timeout_seconds", 360)
-    # 通用化正则表达式以匹配 a 或 b 前缀
     image_pattern = re.compile(r'[ab]2:(\[.*?\])')
     finish_pattern = re.compile(r'[ab]d:(\{.*?"finishReason".*?\})')
-    # 通用错误匹配，可以捕获包含 "error" 或 "context_file" 的 JSON 对象
     error_pattern = re.compile(r'(\{\s*".*?"\s*:\s*".*?"(error|context_file).*?"\s*\})', re.DOTALL | re.IGNORECASE)
     
-    found_image_url = None # 用于存储找到的 URL
+    found_image_url = None
 
     try:
         while True:
             try:
                 raw_data = await asyncio.wait_for(queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
-                logger.warning(f"IMAGE PROCESSOR [ID: {request_id[:8]}]: 等待浏览器数据超时（{timeout}秒）。")
-                # 如果超时但已收到图片，则认为是成功
                 if found_image_url:
                     yield 'image_url', found_image_url
                 else:
@@ -75,7 +76,6 @@ async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, st
                 yield 'error', raw_data.get('error', 'Unknown browser error')
                 return
             
-            # [DONE] 是流的结束信号
             if raw_data == "[DONE]":
                 break
 
@@ -88,7 +88,6 @@ async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, st
                     return
                 except json.JSONDecodeError: pass
 
-            # 只在尚未找到 URL 时才进行匹配
             if not found_image_url:
                 while (match := image_pattern.search(buffer)):
                     try:
@@ -97,7 +96,6 @@ async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, st
                             image_info = image_data_list[0]
                             if image_info.get("type") == "image" and "image" in image_info:
                                 found_image_url = image_info["image"]
-                                # 找到后不再从此 buffer 中继续查找图片
                                 buffer = buffer[match.end():]
                                 break
                     except (json.JSONDecodeError, IndexError) as e:
@@ -111,35 +109,41 @@ async def _process_image_stream(request_id: str) -> AsyncGenerator[tuple[str, st
                 except (json.JSONDecodeError, IndexError): pass
                 buffer = buffer[finish_match.end():]
         
-        # 循环结束后，根据是否找到了 URL 来 yield 最终结果
         if found_image_url:
             yield 'image_url', found_image_url
-        # 如果没有图片URL，但有结束原因，则不发送错误，让调用者决定
         elif not any(e[0] == 'finish' for e in locals().get('_debug_events', [])):
-             # 如果流结束了但还是没找到图片，报告错误
             yield 'error', 'Stream ended without providing an image URL.'
 
-    except asyncio.CancelledError:
-        logger.info(f"IMAGE PROCESSOR [ID: {request_id[:8]}]: 任务被取消。")
     finally:
         if request_id in response_channels:
             del response_channels[request_id]
-            logger.info(f"IMAGE PROCESSOR [ID: {request_id[:8]}]: 响应通道已清理。")
-
 
 async def generate_single_image(prompt: str, model_name: str, browser_ws) -> str | dict:
     """
+    【【【核心重构】】】
     执行单次文生图请求，并返回图片 URL 或错误字典。
+    现在它会从 MODEL_ENDPOINT_MAP 中为指定模型查找并随机选择一个ID。
     """
     if not browser_ws:
         return {"error": "Browser client not connected."}
 
-    target_model_id = MODEL_NAME_TO_ID_MAP.get(model_name, DEFAULT_MODEL_ID)
-    session_id = CONFIG.get("session_id")
-    message_id = CONFIG.get("message_id")
+    # 1. 从“个人通讯录”中查找为该模型捕获的ID
+    if not model_name or model_name not in MODEL_ENDPOINT_MAP:
+        return {"error": f"Model '{model_name}' not found in captured endpoints. Please capture an ID for this image model first."}
 
-    if not session_id or not message_id or "YOUR_" in session_id or "YOUR_" in message_id:
-        return {"error": "Session ID or Message ID is not configured."}
+    mapping_entry = MODEL_ENDPOINT_MAP[model_name]
+    selected_mapping = random.choice(mapping_entry) if isinstance(mapping_entry, list) and mapping_entry else mapping_entry
+    
+    if not selected_mapping:
+        return {"error": f"No valid endpoint entries found for model '{model_name}'."}
+
+    session_id = selected_mapping.get("sessionId")
+    message_id = selected_mapping.get("messageId")
+    # 文生图请求的 model_id 使用默认值即可，session_id 是关键
+    target_model_id = DEFAULT_MODEL_ID
+
+    if not session_id or not message_id:
+        return {"error": f"Captured endpoint for '{model_name}' is missing session_id or message_id."}
 
     request_id = str(uuid.uuid4())
     response_channels[request_id] = asyncio.Queue()
@@ -148,33 +152,30 @@ async def generate_single_image(prompt: str, model_name: str, browser_ws) -> str
         lmarena_payload = convert_to_lmarena_image_payload(prompt, target_model_id, session_id, message_id)
         message_to_browser = {"request_id": request_id, "payload": lmarena_payload}
         
-        logger.info(f"IMAGE GEN (SINGLE) [ID: {request_id[:8]}]: 正在发送请求...")
+        logger.info(f"IMAGE GEN [ID: {request_id[:8]}][Model: {model_name}]: 正在发送请求...")
         await browser_ws.send_text(json.dumps(message_to_browser))
 
-        # _process_image_stream 现在只会 yield 'image_url' 或 'error' 或 'finish'
         async for event_type, data in _process_image_stream(request_id):
             if event_type == 'image_url':
-                logger.info(f"IMAGE GEN (SINGLE) [ID: {request_id[:8]}]: 成功获取图片 URL。")
-                return data # 成功，返回 URL 字符串
+                logger.info(f"IMAGE GEN [ID: {request_id[:8]}]: 成功获取图片 URL。")
+                return data
             elif event_type == 'error':
-                 logger.error(f"IMAGE GEN (SINGLE) [ID: {request_id[:8]}]: 流处理错误: {data}")
+                 logger.error(f"IMAGE GEN [ID: {request_id[:8]}]: 流处理错误: {data}")
                  return {"error": data}
-            elif event_type == 'finish':
-                logger.warning(f"IMAGE GEN (SINGLE) [ID: {request_id[:8]}]: 收到结束信号: {data}")
-                if data == 'content-filter':
-                    return {"error": "响应被终止，可能是上下文超限或者模型内部审查（大概率）的原因"}
+            elif event_type == 'finish' and data == 'content-filter':
+                return {"error": "响应被内容过滤器终止。"}
         
-        # 如果循环正常结束但没有任何返回（例如，只收到了 finish:stop），则报告错误。
         return {"error": "Image generation stream ended without a result."}
 
     except Exception as e:
-        logger.error(f"IMAGE GEN (SINGLE) [ID: {request_id[:8]}]: 处理时发生致命错误: {e}", exc_info=True)
+        logger.error(f"IMAGE GEN [ID: {request_id[:8]}]: 处理时发生致命错误: {e}", exc_info=True)
         if request_id in response_channels:
             del response_channels[request_id]
         return {"error": "An internal server error occurred."}
 
 
 async def handle_image_generation_request(request, browser_ws):
+    # ... 此函数无需修改 ...
     """处理文生图API端点请求，支持并行生成。"""
     try:
         req_body = await request.json()
@@ -186,14 +187,12 @@ async def handle_image_generation_request(request, browser_ws):
         return {"error": "Prompt is required"}, 400
     
     n = req_body.get("n", 1)
-    if not isinstance(n, int) or not 1 <= n <= 10: # OpenAI 限制 n 在 1-10
+    if not isinstance(n, int) or not 1 <= n <= 10:
         return {"error": "Parameter 'n' must be an integer between 1 and 10."}, 400
 
-    model_name = req_body.get("model", "dall-e-3")
+    model_name = req_body.get("model", "dall-e-3") # 客户端请求的模型名
+    logger.info(f"收到文生图请求: n={n}, model='{model_name}', prompt='{prompt[:30]}...'")
 
-    logger.info(f"收到文生图请求: n={n}, prompt='{prompt[:30]}...'")
-
-    # 创建 n 个并行任务
     tasks = [generate_single_image(prompt, model_name, browser_ws) for _ in range(n)]
     results = await asyncio.gather(*tasks)
 
@@ -204,17 +203,11 @@ async def handle_image_generation_request(request, browser_ws):
         logger.error(f"文生图请求中有 {len(errors)} 个任务失败: {errors}")
     
     if not successful_urls:
-         # 如果所有任务都失败了，返回一个错误
         error_message = f"All {n} image generation tasks failed. Last error: {errors[-1] if errors else 'Unknown error'}"
         return {"error": error_message}, 500
 
-    # 格式化为 OpenAI 响应
     response_data = {
         "created": int(time.time()),
-        "data": [
-            {
-                "url": url,
-            } for url in successful_urls
-        ]
+        "data": [{"url": url} for url in successful_urls]
     }
     return response_data, 200
