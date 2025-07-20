@@ -14,14 +14,16 @@ response_channels = None
 CONFIG = None
 DEFAULT_MODEL_ID = None
 
-def initialize_image_module(app_logger, channels, app_config, default_model_id):
-    """初始化模块所需的全局变量 (简化版)。"""
-    global logger, response_channels, CONFIG, DEFAULT_MODEL_ID
+def initialize_image_module(app_logger, channels, app_config, model_map, default_model_id, model_endpoint_map):
+    """初始化模块所需的全局变量。"""
+    global logger, response_channels, CONFIG, MODEL_NAME_TO_ID_MAP, DEFAULT_MODEL_ID, MODEL_ENDPOINT_MAP
     logger = app_logger
     response_channels = channels
     CONFIG = app_config
+    MODEL_NAME_TO_ID_MAP = model_map
     DEFAULT_MODEL_ID = default_model_id
-    logger.info("文生图模块已成功初始化 (v3 - 健壮模式)。")
+    MODEL_ENDPOINT_MAP = model_endpoint_map
+    logger.info("文生图模块已成功初始化 (v2)。")
 
 # convert_to_lmarena_image_payload 和 _process_image_stream 函数保持不变
 def convert_to_lmarena_image_payload(prompt: str, model_id: str, session_id: str, message_id: str) -> dict:
