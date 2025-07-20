@@ -244,7 +244,6 @@ async def websocket_endpoint(websocket: WebSocket):
         response_channels.clear()
         logger.info("WebSocket 连接已清理。")
 
-@app.get("/models")
 @app.get("/v1/models")
 async def get_models():
     if not MODEL_ENDPOINT_MAP:
