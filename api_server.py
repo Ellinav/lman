@@ -137,10 +137,22 @@ async def lifespan(app: FastAPI):
     logger.info("服务器启动完成。等待油猴脚本连接...")
     asyncio.create_task(send_pings())
     last_activity_time = datetime.now()
+
+    # 【核心修正】将初始化移出if判断，并传入正确的MAP
+    # 确保文生图模块总是被初始化，并且能拿到“个人通讯录”
+    image_generation.initialize_image_module(
+        logger=logger, 
+        channels=response_channels, 
+        app_config=CONFIG, 
+        model_map={}, # model_map在新架构下已无用，传空字典
+        default_model_id=DEFAULT_MODEL_ID,
+        model_endpoint_map=MODEL_ENDPOINT_MAP # <-- 将个人通讯录传进去
+    )
+    
     if CONFIG.get("enable_idle_restart", False):
         idle_monitor_thread = threading.Thread(target=idle_monitor, daemon=True)
         idle_monitor_thread.start()
-        image_generation.initialize_image_module(logger, response_channels, CONFIG, {}, DEFAULT_MODEL_ID, MODEL_ENDPOINT_MAP)
+
     yield
     logger.info("服务器正在关闭。")
 
@@ -485,15 +497,6 @@ async def get_admin_login_page():
     </script>
     </body></html>
     """)
-
-@app.post("/v1/v1/images/generations")
-async def images_generations_alias(request: Request):
-    """
-    这是一个别名/陷阱，用于捕获SillyTavern在基础URL已包含/v1时
-    生成的错误的文生图路径。它会将请求无缝转交给正确的处理函数。
-    """
-    logger.info("捕获到来自SillyTavern的错误路径 '/v1/v1/images/generations' 请求，已自动转交。")
-    return await images_generations(request)
 
 @app.get("/admin", response_class=HTMLResponse)
 async def get_admin_page():
