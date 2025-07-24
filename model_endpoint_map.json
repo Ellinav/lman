@@ -1,27 +1,183 @@
 {
-  "o3-2025-04-16": [
+  "gemini-2.5-pro": [
     {
-      "session_id": "b2096d33-2651-4802-97c1-c9b788c01c7a",
-      "message_id": "151968ec-b43f-4d0b-a655-e508156af578",
-      "mode": "direct_chat"
+      "sessionId": "976a51d5-d6f0-4fb4-9054-98d4e4688569",
+      "messageId": "7abcbbe6-be73-4aa7-93b1-d96195c6d158",
+      "mode": "direct_chat",
+      "modelId": "e2d9d353-6dbe-4414-bf87-bd289d523726"
     },
     {
-      "session_id": "session_for_battle_A",
-      "message_id": "message_for_battle_A",
-      "mode": "battle",
-      "battle_target": "A"
+      "sessionId": "e7bba781-827e-405c-835a-3fef7fc7ff22",
+      "messageId": "902b6233-56f8-4c7f-b3ec-65c8bbe7c55f",
+      "mode": "direct_chat",
+      "modelId": "e2d9d353-6dbe-4414-bf87-bd289d523726"
     },
     {
-      "session_id": "session_for_battle_B",
-      "message_id": "message_for_battle_B",
+      "sessionId": "b0d27ea1-76d6-431a-b83d-cd531bdfc9a3",
+      "messageId": "ed12f010-5850-4120-a877-f49011ff7bfc",
       "mode": "battle",
-      "battle_target": "B"
+      "battleTarget": "B",
+      "modelId": "e2d9d353-6dbe-4414-bf87-bd289d523726"
     }
   ],
-  "gemini-1.5-pro-20241022": {
-      "session_id": "session_for_battle_A",
-      "message_id": "message_for_battle_A",
-      "mode": "battle",
-      "battle_target": "A"
+  "claude-opus-4-20250514": [
+    {
+      "sessionId": "43f96ebf-b483-4dc3-a413-0470191f1c22",
+      "messageId": "a07a546f-22c2-4783-bf5f-82619f899b23",
+      "mode": "direct_chat",
+      "modelId": "ee116d12-64d6-48a8-88e5-b2d06325cdd2"
+    },
+    {
+      "sessionId": "94b5b72c-de6b-43b4-a91c-e0626c0996c8",
+      "messageId": "845bb470-8445-4953-9803-a7dcc3a0f6d2",
+      "mode": "direct_chat",
+      "modelId": "ee116d12-64d6-48a8-88e5-b2d06325cdd2"
     }
+  ],
+  "o3-2025-04-16": [
+    {
+      "sessionId": "a2f17a50-ca61-4064-8805-71f648f419f7",
+      "messageId": "09dafa0b-b413-4e6d-af95-4f0b29f07f39",
+      "mode": "direct_chat",
+      "modelId": "cb0f1e24-e8e9-4745-aabc-b926ffde7475"
+    },
+    {
+      "sessionId": "4a7bc4c8-bf95-44e1-9081-7592736a71da",
+      "messageId": "26f6bcdb-e1ab-40c5-81ef-9b67d3a30a5b",
+      "mode": "direct_chat",
+      "modelId": "cb0f1e24-e8e9-4745-aabc-b926ffde7475"
+    }
+  ],
+  "claude-sonnet-4-20250514-thinking-32k": [
+    {
+      "sessionId": "32ff266f-8a33-40ac-b618-38a8dedd973c",
+      "messageId": "5f87c876-7497-4dac-a7ce-263ebd87e212",
+      "mode": "direct_chat",
+      "modelId": "4653dded-a46b-442a-a8fe-9bb9730e2453"
+    }
+  ],
+  "claude-3-5-sonnet-20241022": [
+    {
+      "sessionId": "743f0489-b6d5-4211-bad5-7dc87dc571ba",
+      "messageId": "d7607404-f9b1-4a7d-a009-d6ded60fa384",
+      "mode": "direct_chat",
+      "modelId": "f44e280a-7914-43ca-a25d-ecfcc5d48d09"
+    }
+  ],
+  "claude-3-7-sonnet-20250219": [
+    {
+      "sessionId": "9d1d7c93-8457-4c40-97f0-32d505b14559",
+      "messageId": "2bff09cd-3518-4561-b2df-153e2e2f064a",
+      "mode": "direct_chat",
+      "modelId": "c5a11495-081a-4dc6-8d9a-64a4fd6f7bbc"
+    }
+  ],
+  "chatgpt-4o-latest-20250326": [
+    {
+      "sessionId": "c8934484-3a24-434b-9d3e-7a8efc15264d",
+      "messageId": "899e0de0-5da5-46ab-86fc-97b7f7b0e7da",
+      "mode": "direct_chat",
+      "modelId": "9513524d-882e-4350-b31e-e4584440c2c8"
+    }
+  ],
+  "gpt-4.1-2025-04-14": [
+    {
+      "sessionId": "27d7e649-caa3-4fda-aed3-4878db46fed9",
+      "messageId": "9f5066a3-8d78-45c5-8018-51cfe7bbcd5c",
+      "mode": "direct_chat",
+      "modelId": "14e9311c-94d2-40c2-8c54-273947e208b0"
+    },
+    {
+      "sessionId": "7e609937-f4e6-4252-a275-c48a478154b5",
+      "messageId": "754788fe-77f5-47e4-8895-80cc94a25a60",
+      "mode": "direct_chat",
+      "modelId": "14e9311c-94d2-40c2-8c54-273947e208b0"
+    }
+  ],
+  "grok-4-0709": [
+    {
+      "sessionId": "d17001c9-39cf-4c54-87de-0dda34cdd1d2",
+      "messageId": "d2554c13-b65a-4195-bbae-1ef119d096ed",
+      "mode": "direct_chat",
+      "modelId": "b9edb8e9-4e98-49e7-8aaf-ae67e9797a11"
+    }
+  ],
+  "kimi-k2-0711-preview": [
+    {
+      "sessionId": "b2bdff8a-e46a-4022-a6fc-0760f2ccb1f0",
+      "messageId": "7173f2f2-c66a-4a2c-8f31-db97b85930b8",
+      "mode": "direct_chat",
+      "modelId": "7a3626fc-4e64-4c9e-821f-b449a4b43b6a"
+    }
+  ],
+  "grok-3-preview-02-24": [
+    {
+      "sessionId": "8ee3036d-306e-4add-85e3-845675a00c06",
+      "messageId": "98a65164-4e3c-4a00-87e7-edc2bd20c6cd",
+      "mode": "direct_chat",
+      "modelId": "bd2c8278-af7a-4ec3-84db-0a426c785564"
+    }
+  ],
+  "claude-sonnet-4-20250514": [
+    {
+      "sessionId": "0c80a35b-18cd-4200-b2e3-308573bc5158",
+      "messageId": "b131608e-6fb5-40dc-89bb-10ab3f261ff8",
+      "mode": "direct_chat",
+      "modelId": "ac44dd10-0666-451c-b824-386ccfea7bcc"
+    }
+  ],
+  "claude": [
+    {
+      "sessionId": "c823b6a5-5929-4f43-a910-9f6c9e9757ab",
+      "messageId": "6aa9f9c1-2333-4828-82cc-0a2f232a1128",
+      "mode": "battle",
+      "battleTarget": "B"
+    }
+  ],
+  "imagen-4.0-ultra-generate-preview-06-06-v2": [
+    {
+      "sessionId": "a6686969-11a9-4bbf-a894-3d93486096bd",
+      "messageId": "30310634-9c1e-4764-bdc0-252bdfeb48f8",
+      "mode": "direct_chat",
+      "modelId": "f8aec69d-e077-4ed1-99be-d34f48559bbf"
+    },
+    {
+      "sessionId": "46ee1b57-1382-4e00-8506-92c9a077b6b4",
+      "messageId": "70233305-b542-4a7a-b570-2c3976d2bfbb",
+      "mode": "direct_chat",
+      "modelId": "f8aec69d-e077-4ed1-99be-d34f48559bbf"
+    }
+  ],
+  "imagen-4.0-generate-preview-06-06-v2": [
+    {
+      "sessionId": "607e0313-4af7-4aad-bf1f-fccc7f11ce08",
+      "messageId": "270215fe-8413-42a3-840b-b76d2a606980",
+      "mode": "direct_chat",
+      "modelId": "2ec9f1a6-126f-4c65-a102-15ac401dcea4"
+    }
+  ],
+  "flux-1-kontext-max": [
+    {
+      "sessionId": "5d1b9d86-8da3-4341-a962-961711aa75ae",
+      "messageId": "31e947a1-8293-4714-adb0-7769e8492ffe",
+      "mode": "direct_chat",
+      "modelId": "0633b1ef-289f-49d4-a834-3d475a25e46b"
+    }
+  ],
+  "seedream-3": [
+    {
+      "sessionId": "299c897e-f17d-45c6-bfbe-51814f679e6c",
+      "messageId": "49cd0ab2-23de-4416-b2c1-304f52006762",
+      "mode": "direct_chat",
+      "modelId": "0dde746c-3dbc-42be-b8f5-f38bd1595baa"
+    }
+  ],
+  "dall-e-3": [
+    {
+      "sessionId": "c3024858-3ecd-4fd0-8fa4-af5fe1d47c1e",
+      "messageId": "2b90d219-89f8-48fc-9ab3-2c0401cb67fe",
+      "mode": "direct_chat",
+      "modelId": "bb97bc68-131c-4ea4-a59e-03a6252de0d2"
+    }
+  ]
 }
