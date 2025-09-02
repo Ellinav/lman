@@ -36,5 +36,6 @@
   "file_bed_upload_url": "http://127.0.0.1:5180/upload",
 
   // 文件床 API Key。如果您在文件床的 main.py 中设置了 API_KEY，请在此处填写。
-  "file_bed_api_key": "oyzw660904"
+  "file_bed_api_key": ""
 }
+
