@@ -1,18 +1,16 @@
-import asyncio, json, logging, os, sys, re, threading, random, time
-import uuid
+import asyncio, json, logging, os, sys, re, threading, random, time, uuid, mimetypes
 from datetime import datetime
 from contextlib import asynccontextmanager
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
-# --- 导入自定义模块 ---
-from modules import image_generation
-from modules import payload_converter
+# --- [新增] 内部模块导入 ---
+from modules.file_uploader import upload_to_file_bed
 
 # --- 基础配置 ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,41 +38,30 @@ class EndpointUpdatePayload(BaseModel):
 
 def load_model_endpoint_map():
     global MODEL_ENDPOINT_MAP
-    # 优先尝试从可写的 /tmp 目录加载上一次会话保存的最新状态
     try:
         with open(MAP_FILE_PATH, 'r', encoding='utf-8') as f:
             content = f.read()
-            if not content.strip():
-                MODEL_ENDPOINT_MAP = {}
-            else:
-                MODEL_ENDPOINT_MAP = json.loads(content)
+            MODEL_ENDPOINT_MAP = json.loads(content) if content.strip() else {}
             logger.info(f"成功从临时文件 '{MAP_FILE_PATH}' 加载了 {len(MODEL_ENDPOINT_MAP)} 个端点映射。")
-            return # 如果成功，直接返回
+            return
     except (FileNotFoundError, json.JSONDecodeError):
-        # 如果在/tmp没找到文件，说明是冷启动，这是正常现象，继续往下走
         pass
 
-    # 如果临时文件加载失败，则回退到从工作目录加载原始文件
     try:
         with open('model_endpoint_map.json', 'r', encoding='utf-8') as f:
             content = f.read()
-            if not content.strip():
-                MODEL_ENDPOINT_MAP = {}
-            else:
-                MODEL_ENDPOINT_MAP = json.loads(content)
+            MODEL_ENDPOINT_MAP = json.loads(content) if content.strip() else {}
             logger.info(f"从原始文件 'model_endpoint_map.json' 加载了 {len(MODEL_ENDPOINT_MAP)} 个端点映射。")
     except (FileNotFoundError, json.JSONDecodeError):
         MODEL_ENDPOINT_MAP = {}
 
 def save_model_endpoint_map():
-    """将内存中的MODEL_ENDPOINT_MAP字典保存回json文件。"""
     try:
-        # vvvvvv 修改这一行 vvvvvv
         with open(MAP_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(MODEL_ENDPOINT_MAP, f, indent=2, ensure_ascii=False)
-        logger.info(f"✅ 成功将最新的ID地图保存到 {MAP_FILE_PATH}。") # (可选) 更新日志信息
+        logger.info(f"✅ 成功将最新的ID地图保存到 {MAP_FILE_PATH}。")
     except Exception as e:
-        logger.error(f"❌ 写入 {MAP_FILE_PATH} 文件时发生错误: {e}") # (可选) 更新日志信息
+        logger.error(f"❌ 写入 {MAP_FILE_PATH} 文件时发生错误: {e}")
         
 def load_config():
     global CONFIG
@@ -123,7 +110,6 @@ async def send_pings():
         if browser_ws:
             try:
                 await browser_ws.send_text(json.dumps({"command": "ping"}))
-                logger.debug("Ping sent.")
             except Exception:
                 logger.debug("Ping发送失败，连接可能已关闭。")
 
@@ -131,22 +117,12 @@ async def send_pings():
 async def lifespan(app: FastAPI):
     global main_event_loop, last_activity_time, idle_monitor_thread
     main_event_loop = asyncio.get_running_loop()
-    payload_converter.initialize_converter(response_channels, logger)
     load_config()
     load_model_endpoint_map()
     logger.info("服务器启动完成。等待油猴脚本连接...")
     asyncio.create_task(send_pings())
     last_activity_time = datetime.now()
 
-    image_generation.initialize_image_module(
-        app_logger=logger, 
-        channels=response_channels, 
-        app_config=CONFIG, 
-        model_map={},
-        default_model_id=DEFAULT_MODEL_ID,
-        model_endpoint_map=MODEL_ENDPOINT_MAP
-    )
-    
     if CONFIG.get("enable_idle_restart", False):
         idle_monitor_thread = threading.Thread(target=idle_monitor, daemon=True)
         idle_monitor_thread.start()
@@ -163,31 +139,26 @@ async def add_or_update_endpoint(payload: EndpointUpdatePayload):
     new_entry = payload.dict(exclude_none=True, by_alias=True)
     model_name = new_entry.pop("modelName")
 
-    # 如果模型是第一次出现，创建一个新列表
     if model_name not in MODEL_ENDPOINT_MAP:
         MODEL_ENDPOINT_MAP[model_name] = [new_entry]
         logger.info(f"成功为新模型 '{model_name}' 创建了新的端点映射列表。")
-        save_model_endpoint_map()  # 保存更改
+        save_model_endpoint_map()
         return {"status": "success", "message": f"Endpoint for {model_name} created."}
 
-    # 如果模型已存在且其值是列表
     if isinstance(MODEL_ENDPOINT_MAP.get(model_name), list):
         endpoints = MODEL_ENDPOINT_MAP[model_name]
         new_session_id = new_entry.get('sessionId')
-        
-        # 检查重复
         is_duplicate = any(ep.get('sessionId') == new_session_id for ep in endpoints)
         
         if not is_duplicate:
             endpoints.append(new_entry)
             logger.info(f"成功为模型 '{model_name}' 追加了一个新的端点映射。")
-            save_model_endpoint_map()  # 保存更改
+            save_model_endpoint_map()
             return {"status": "success", "message": f"New endpoint for {model_name} appended."}
         else:
             logger.info(f"检测到重复的 Session ID，已为模型 '{model_name}' 忽略本次添加。")
             return {"status": "skipped", "message": "Duplicate endpoint ignored."}
             
-    # 如果数据结构不正确，记录错误
     logger.error(f"为模型 '{model_name}' 添加端点时发生错误：数据结构不是预期的列表。")
     raise HTTPException(status_code=500, detail="Internal data structure error.")
 
@@ -204,9 +175,7 @@ async def import_map(request: Request):
         
         MODEL_ENDPOINT_MAP = new_map
         logger.info(f"✅ 成功从API导入了 {len(MODEL_ENDPOINT_MAP)} 个模型端点映射！")
-        
-        save_model_endpoint_map() # <-- 【【【核心修正】】】 在导入后立刻保存到临时文件
-        
+        save_model_endpoint_map()
         return {"status": "success", "message": f"Map imported with {len(MODEL_ENDPOINT_MAP)} entries."}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in request body.")
@@ -228,12 +197,10 @@ async def websocket_endpoint(websocket: WebSocket):
             message_str = await websocket.receive_text()
             message = json.loads(message_str)
             if message.get("status") == "pong":
-                logger.debug("Pong received from client.")
                 continue
             request_id = message.get("request_id")
             data = message.get("data")
             if not request_id or data is None:
-                logger.warning(f"收到来自浏览器的无效消息: {message}")
                 continue
             if request_id in response_channels:
                 await response_channels[request_id].put(data)
@@ -243,10 +210,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     WARNED_UNKNOWN_IDS.add(request_id)
     except WebSocketDisconnect:
         logger.warning("❌ 油猴脚本客户端已断开连接。")
-        if response_channels:
-            logger.warning(f"WebSocket 连接断开！正在清理 {len(response_channels)} 个待处理的请求通道...")
-    except Exception as e:
-        logger.error(f"WebSocket 处理时发生未知错误: {e}", exc_info=True)
     finally:
         browser_ws = None
         for queue in response_channels.values():
@@ -271,12 +234,137 @@ async def get_models():
         ],
     }
 
+async def _process_openai_message(message: dict) -> dict:
+    content = message.get("content")
+    role = message.get("role")
+    attachments = []
+    text_content = ""
+
+    if isinstance(content, list):
+        for part in content:
+            if part.get("type") == "text":
+                text_content += part.get("text", "")
+            elif part.get("type") == "image_url":
+                image_url_data = part.get("image_url", {})
+                url = image_url_data.get("url")
+                if url:
+                    content_type = mimetypes.guess_type(url)[0] or 'application/octet-stream'
+                    file_name = f"image_{uuid.uuid4()}.{mimetypes.guess_extension(content_type).lstrip('.') or 'png'}"
+                    attachments.append({"name": file_name, "contentType": content_type, "url": url})
+    elif isinstance(content, str):
+        text_content = content
+    
+    if role == "user" and not text_content.strip():
+        text_content = " "
+
+    return {"role": role, "content": text_content, "attachments": attachments}
+
+async def convert_openai_to_lmarena_payload(openai_data: dict, session_id: str, message_id: str, mode_override: str = None, battle_target_override: str = None) -> dict:
+    processed_messages = [await _process_openai_message(msg) for msg in openai_data.get("messages", [])]
+        
+    final_model_id = openai_data.get("model_id_override", DEFAULT_MODEL_ID)
+
+    message_templates = []
+    for msg in processed_messages:
+        template = {"role": msg["role"], "content": msg.get("content", ""), "attachments": msg.get("attachments", [])}
+        mode = mode_override or "direct_chat"
+        target_participant = (battle_target_override or "A").lower()
+        
+        if msg['role'] == 'system':
+            template['participantPosition'] = target_participant if mode == 'battle' else 'b'
+        else:
+            template['participantPosition'] = target_participant if mode == 'battle' else 'a'
+        message_templates.append(template)
+        
+    return {
+        "message_templates": message_templates,
+        "target_model_id": final_model_id,
+        "session_id": session_id,
+        "message_id": message_id
+    }
+
+async def _process_lmarena_stream(request_id: str):
+    queue = response_channels.get(request_id)
+    if not queue:
+        yield 'error', 'Internal server error: response channel not found.'
+        return
+
+    buffer = ""
+    timeout = 360
+    text_pattern = re.compile(r'[ab]0:"((?:\\.|[^"\\])*)"')
+    image_pattern = re.compile(r'[ab]2:(\[.*?\])')
+    
+    try:
+        while True:
+            try:
+                raw_data = await asyncio.wait_for(queue.get(), timeout=timeout)
+            except asyncio.TimeoutError:
+                yield 'error', f'Response timed out after {timeout} seconds.'
+                return
+
+            if isinstance(raw_data, dict) and 'error' in raw_data:
+                yield 'error', raw_data['error']
+                return
+            if raw_data == "[DONE]":
+                break
+
+            buffer += "".join(map(str, raw_data)) if isinstance(raw_data, list) else str(raw_data)
+            
+            while (match := text_pattern.search(buffer)):
+                yield 'content', json.loads(f'"{match.group(1)}"')
+                buffer = buffer[match.end():]
+
+            while (match := image_pattern.search(buffer)):
+                try:
+                    image_data = json.loads(match.group(1))
+                    if image_data and "image" in image_data[0]:
+                        markdown_image = f"![Image]({image_data[0]['image']})"
+                        yield 'content', markdown_image
+                except (json.JSONDecodeError, IndexError):
+                    pass
+                buffer = buffer[match.end():]
+    finally:
+        if request_id in response_channels:
+            del response_channels[request_id]
+
+async def stream_generator(request_id: str, model: str):
+    response_id = f"chatcmpl-{uuid.uuid4()}"
+    async for event_type, data in _process_lmarena_stream(request_id):
+        if event_type == 'content':
+            chunk = {"id": response_id, "object": "chat.completion.chunk", "created": int(time.time()), "model": model, "choices": [{"index": 0, "delta": {"content": data}, "finish_reason": None}]}
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        elif event_type == 'error':
+            error_chunk = {"id": response_id, "object": "chat.completion.chunk", "created": int(time.time()), "model": model, "choices": [{"index": 0, "delta": {"content": f"\n[LMArena Bridge Error]: {data}"}, "finish_reason": 'stop'}]}
+            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+            break
+    
+    finish_chunk = {"id": response_id, "object": "chat.completion.chunk", "created": int(time.time()), "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    yield f"data: {json.dumps(finish_chunk, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"
+
+async def non_stream_response(request_id: str, model: str):
+    full_content = []
+    error_content = None
+    async for event_type, data in _process_lmarena_stream(request_id):
+        if event_type == 'content':
+            full_content.append(data)
+        elif event_type == 'error':
+            error_content = data
+            break
+    
+    if error_content:
+        return JSONResponse(status_code=500, content={"error": {"message": f"[LMArena Bridge Error]: {error_content}"}})
+        
+    final_content = "".join(full_content)
+    response_data = {"id": f"chatcmpl-{uuid.uuid4()}", "object": "chat.completion", "created": int(time.time()), "model": model, "choices": [{"index": 0, "message": {"role": "assistant", "content": final_content}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+    return JSONResponse(content=response_data)
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     global last_activity_time
     last_activity_time = datetime.now()
-
     load_config()
+
     api_key = os.environ.get("API_KEY") or CONFIG.get("api_key")
     if api_key:
         auth_header = request.headers.get('Authorization')
@@ -293,44 +381,56 @@ async def chat_completions(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="无效的 JSON 请求体")
 
-    model_name = openai_req.get("model")
-    session_id, message_id, mode_override, battle_target_override = None, None, None, None
+    try:
+        if CONFIG.get("file_bed_enabled"):
+            for message in openai_req.get("messages", []):
+                if isinstance(message.get("content"), list):
+                    for part in message["content"]:
+                        if part.get("type") == "image_url":
+                            image_url_data = part.get("image_url", {})
+                            base64_url = image_url_data.get("url")
+                            if base64_url and base64_url.startswith("data:"):
+                                logger.info("文件床已启用，正在上传图片...")
+                                uploaded_url, error = await upload_to_file_bed(
+                                    file_name="uploaded_image.png",
+                                    file_data=base64_url,
+                                    upload_url=CONFIG.get("file_bed_upload_url"),
+                                    api_key=CONFIG.get("file_bed_api_key")
+                                )
+                                if error:
+                                    raise HTTPException(status_code=500, detail=f"文件床上传失败: {error}")
+                                image_url_data["url"] = uploaded_url
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"附件预处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"附件预处理失败: {e}")
 
-    specific_model_id = None
+    model_name = openai_req.get("model")
+    session_id, message_id, mode_override, battle_target_override, specific_model_id = None, None, None, None, None
 
     if model_name and model_name in MODEL_ENDPOINT_MAP:
-        mapping_entry = MODEL_ENDPOINT_MAP[model_name]
-        selected_mapping = random.choice(mapping_entry) if isinstance(mapping_entry, list) and mapping_entry else mapping_entry if isinstance(mapping_entry, dict) else None
-        
-        if selected_mapping:
-            session_id = selected_mapping.get("session_id") or selected_mapping.get("sessionId")
-            message_id = selected_mapping.get("message_id") or selected_mapping.get("messageId")
-            mode_override = selected_mapping.get("mode")
-            battle_target_override = selected_mapping.get("battle_target")
-            # 【【【在这里获取保存的精确模型ID】】】
-            specific_model_id = selected_mapping.get("model_id") or selected_mapping.get("modelId")
-
-    logger.info(f"正在为模型 '{model_name}' 使用 Session ID: {session_id}")
-
-    if not session_id or not message_id or "YOUR_" in session_id or "YOUR_" in message_id:
-        raise HTTPException(status_code=400, detail="会话ID或消息ID无效。")
-
-    final_model_id = specific_model_id or DEFAULT_MODEL_ID
+        mappings = MODEL_ENDPOINT_MAP[model_name]
+        selected = random.choice(mappings) if isinstance(mappings, list) and mappings else mappings
+        if isinstance(selected, dict):
+            session_id = selected.get("sessionId")
+            message_id = selected.get("messageId")
+            mode_override = selected.get("mode")
+            battle_target_override = selected.get("battle_target")
+            specific_model_id = selected.get("modelId")
+    
+    if not session_id:
+        raise HTTPException(status_code=400, detail=f"模型 '{model_name}' 未找到有效的会话ID映射。")
+    
+    openai_req["model_id_override"] = specific_model_id or DEFAULT_MODEL_ID
 
     request_id = str(uuid.uuid4())
     response_channels[request_id] = asyncio.Queue()
-
     try:
-        from modules.payload_converter import convert_openai_to_lmarena_payload, stream_generator, non_stream_response
-        lmarena_payload = convert_openai_to_lmarena_payload(
-            openai_req, session_id, message_id, final_model_id, CONFIG,
-            mode_override=mode_override, battle_target_override=battle_target_override
-        )
-        
-        message_to_browser = {"request_id": request_id, "payload": lmarena_payload}
-        await browser_ws.send_text(json.dumps(message_to_browser))
+        lmarena_payload = await convert_openai_to_lmarena_payload(openai_req, session_id, message_id, mode_override, battle_target_override)
+        await browser_ws.send_text(json.dumps({"request_id": request_id, "payload": lmarena_payload}))
 
-        is_stream = openai_req.get("stream", True)
+        is_stream = openai_req.get("stream", False)
         if is_stream:
             return StreamingResponse(stream_generator(request_id, model_name or "default_model"), media_type="text/event-stream")
         else:
@@ -338,23 +438,6 @@ async def chat_completions(request: Request):
     except Exception as e:
         if request_id in response_channels: del response_channels[request_id]
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/v1/images/generations")
-async def images_generations(request: Request):
-    global last_activity_time
-    last_activity_time = datetime.now()
-
-    load_config()
-    api_key = os.environ.get("API_KEY") or CONFIG.get("api_key")
-    if api_key:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            raise HTTPException(status_code=401, detail="未提供 API Key。")
-        if auth_header.split(' ')[1] != api_key:
-            raise HTTPException(status_code=401, detail="提供的 API Key 不正确。")
-    response_data, status_code = await image_generation.handle_image_generation_request(request, browser_ws, MODEL_ENDPOINT_MAP)
-
-    return JSONResponse(content=response_data, status_code=status_code)
 
 @app.post("/internal/start_id_capture")
 async def start_id_capture():
@@ -373,7 +456,6 @@ class DeletePayload(BaseModel):
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     server_api_key = os.environ.get("API_KEY") or CONFIG.get("api_key")
-    # 访问 .credentials 属性是正确的，因为 security 是 HTTPBearer()
     if server_api_key and credentials.credentials == server_api_key:
         return "admin"
     raise HTTPException(
@@ -401,24 +483,18 @@ async def delete_endpoint(payload: DeletePayload, current_user: str = Depends(ge
         logger.error(f"删除失败：无法在 MODEL_ENDPOINT_MAP 中找到匹配的模型 '{model_name_from_client}'。")
         raise HTTPException(status_code=404, detail="Endpoint not found: Model name does not match.")
 
-    # --- 【【【核心修复逻辑】】】 ---
     entry = MODEL_ENDPOINT_MAP[found_model_key]
     
-    # 情况一：值是单个字典
     if isinstance(entry, dict):
-        # 检查这个字典的 session_id 是否匹配
         current_session_id = entry.get('sessionId', entry.get('session_id', '')).strip()
         if current_session_id == session_id_to_delete:
-            # 匹配成功，直接删除整个模型条目
             del MODEL_ENDPOINT_MAP[found_model_key]
             logger.info(f"成功删除模型 '{found_model_key}' 的单个字典条目 (SessionID: {session_id_to_delete})。")
             save_model_endpoint_map()
             return {"status": "success", "message": "Endpoint (single entry) deleted."}
         else:
-            # 不匹配
             logger.warning(f"在模型 '{found_model_key}' 的单个条目中未找到匹配的 SessionID: '{session_id_to_delete}'。")
 
-    # 情况二：值是一个列表
     elif isinstance(entry, list):
         original_len = len(entry)
         new_endpoints = [
@@ -439,7 +515,6 @@ async def delete_endpoint(payload: DeletePayload, current_user: str = Depends(ge
         else:
             logger.warning(f"在模型 '{found_model_key}' 的列表中未找到要删除的 SessionID: '{session_id_to_delete}'。")
 
-    # 如果代码执行到这里，说明找到了模型，但 SessionID 不匹配
     raise HTTPException(status_code=404, detail="Endpoint not found: Session ID does not match.")
 
 @app.get("/", response_class=HTMLResponse)
@@ -455,12 +530,10 @@ async def root():
 
 @app.get("/v1/get-endpoint-map")
 async def get_endpoint_map_data(current_user: str = Depends(get_current_user)):
-    # 这个接口受保护，必须提供正确的 Bearer Token
     return JSONResponse(content=MODEL_ENDPOINT_MAP)
 
 @app.get("/admin/login", response_class=HTMLResponse)
 async def get_admin_login_page():
-    # 这个端点只返回一个简单的登录页面，不需要任何认证
     return HTMLResponse(content="""
     <!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8">
     <title>Admin Login</title>
@@ -482,7 +555,6 @@ async def get_admin_login_page():
         function login() {
             const apiKey = document.getElementById('api-key-input').value;
             if (apiKey) {
-                // 将 API Key 存到 localStorage，然后跳转到真正的 admin 页面
                 localStorage.setItem('adminApiKey', apiKey);
                 window.location.href = '/admin';
             } else {
@@ -498,7 +570,6 @@ async def get_admin_login_page():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def get_admin_page():
-    # 最终版：基于能正常工作的极简版，安全地添加了导入、导出和删除功能
     html_content = """
     <!DOCTYPE html>
     <html lang="zh">
@@ -552,7 +623,6 @@ async def get_admin_page():
                 const dataContainer = document.getElementById('data-container');
                 const apiKey = localStorage.getItem('adminApiKey');
 
-                // --- 导出功能 ---
                 exportButton.addEventListener('click', function() {
                     if (!modelEndpointMapData || Object.keys(modelEndpointMapData).length === 0) {
                         alert('没有数据可导出！'); return;
@@ -570,7 +640,6 @@ async def get_admin_page():
                     URL.revokeObjectURL(url);
                 });
 
-                // --- 导入功能 ---
                 importButton.addEventListener('click', () => importFileInput.click());
                 importFileInput.addEventListener('change', (event) => {
                     const file = event.target.files[0];
@@ -605,7 +674,6 @@ async def get_admin_page():
                     reader.readAsText(file);
                 });
 
-                // --- 删除功能 (事件委托) ---
                 dataContainer.addEventListener('click', async function(event) {
                     if (event.target.classList.contains('delete-btn')) {
                         if (!apiKey) { alert('认证信息丢失，请重新登录。'); window.location.href = '/admin/login'; return; }
@@ -642,7 +710,6 @@ async def get_admin_page():
                     }
                 });
 
-                // --- 渲染函数 ---
                 function renderData(data) {
                     modelEndpointMapData = data;
                     if (Object.keys(data).length === 0) {
@@ -676,7 +743,6 @@ async def get_admin_page():
                     dataContainer.innerHTML = html;
                 }
                 
-                // --- 启动函数：页面加载时获取初始数据 ---
                 async function initialLoad() {
                     if (!apiKey) {
                         window.location.href = '/admin/login';
@@ -696,7 +762,7 @@ async def get_admin_page():
                     }
                 }
 
-                initialLoad(); // 执行！
+                initialLoad();
             });
         </script>
     </body>
@@ -705,12 +771,7 @@ async def get_admin_page():
     return HTMLResponse(content=html_content)
 
 if __name__ == "__main__":
-    # 确保在运行前，存在 modules/payload_converter.py 文件
-    if not os.path.exists("modules/payload_converter.py"):
-        logger.error("错误: 缺少 'modules/payload_converter.py' 文件。请确保该文件存在。")
-        sys.exit(1)
-        
     api_port = int(os.environ.get("PORT", 7860))
     logger.info(f"🚀 LMArena Bridge API 服务器正在启动...")
     logger.info(f"   - 监听地址: http://0.0.0.0:{api_port}")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=api_port)
+    uvicorn.run("__main__:app", host="0.0.0.0", port=api_port, reload=False)
