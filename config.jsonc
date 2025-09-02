@@ -26,5 +26,15 @@
 
   // --- 模式配置 (仍然被用于决定消息的参与者位置) ---
   "id_updater_last_mode": "direct_chat",
-  "id_updater_battle_target": "A"
+  "id_updater_battle_target": "A",
+
+  // 开关：启用文件床。设置为 true 时，所有图片附件将首先上传到文件床服务器。
+  "file_bed_enabled": false,
+
+  // 文件床上传API的URL。这是您在第1步中部署的 file_bed_server 服务的 /upload 地址。
+  // 例如 "http://127.0.0.1:5180/upload" 或您在HF上的公开地址
+  "file_bed_upload_url": "http://127.0.0.1:5180/upload",
+
+  // 文件床 API Key。如果您在文件床的 main.py 中设置了 API_KEY，请在此处填写。
+  "file_bed_api_key": "oyzw660904"
 }
